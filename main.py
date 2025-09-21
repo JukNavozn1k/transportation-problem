@@ -133,8 +133,8 @@ def main():
         total_demand = sum(demand)
         st.subheader("Введённые данные")
         st.markdown("Матрица стоимостей C:")
-        c_cols = [f"D{j+1}" for j in range(n)]
-        c_idx = [f"S{i+1}" for i in range(m)]
+        c_cols = [f"D{j+1} ({to_int_if_possible(demand[j])})" for j in range(n)]
+        c_idx = [f"S{i+1} ({to_int_if_possible(supply[i])})" for i in range(m)]
         st.dataframe(pd.DataFrame(format_matrix(cost), columns=c_cols, index=c_idx), use_container_width=True)
         c_a, c_b = st.columns(2)
         with c_a:
@@ -179,8 +179,14 @@ def main():
             if res.x:
                 xmat = [res.x[i * n_b:(i + 1) * n_b] for i in range(m_b)]
                 st.markdown("Оптимальный план (матрица x):")
-                cols_b = [f"D{j+1}" + (" (фикт.)" if j >= n else "") for j in range(n_b)]
-                idx_b = [f"S{i+1}" + (" (фикт.)" if i >= m else "") for i in range(m_b)]
+                cols_b = [
+                    f"D{j+1} ({to_int_if_possible(demand_b[j])})" + (" (фикт.)" if j >= n else "")
+                    for j in range(n_b)
+                ]
+                idx_b = [
+                    f"S{i+1} ({to_int_if_possible(supply_b[i])})" + (" (фикт.)" if i >= m else "")
+                    for i in range(m_b)
+                ]
                 st.dataframe(pd.DataFrame(format_matrix(xmat), columns=cols_b, index=idx_b), use_container_width=True)
 
                 # Красивое разложение целевой функции: Z = sum c_ij * x_ij = ...
