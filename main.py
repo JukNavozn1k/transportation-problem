@@ -127,7 +127,8 @@ def main():
         with obj_col1:
             st.write("")
         with obj_col2:
-            objective = st.radio("Целевая функция", ["Максимум", "Минимум"], index=0, horizontal=True)
+            # objective = st.radio("Целевая функция", ["Максимум", "Минимум"], index=0, horizontal=True)
+            objective = st.radio("Целевая функция", ["Минимум"], index=0, horizontal=True)
 
     # Выходные данные — тоже по центру
     if not run:
