@@ -43,30 +43,54 @@ def vogel_initial_solution(supply, demand, cost):
 
     return alloc
 
+def balance_transportation(supply, demand, cost):
+    total_supply = sum(supply)
+    total_demand = sum(demand)
+
+    supply = supply[:]
+    demand = demand[:]
+    cost = [row[:] for row in cost]  # копия
+
+    if total_supply > total_demand:
+        # добавляем фиктивного потребителя
+        diff = total_supply - total_demand
+        demand.append(diff)
+        for row in cost:
+            row.append(0)  # нулевая стоимость
+    elif total_demand > total_supply:
+        # добавляем фиктивного поставщика
+        diff = total_demand - total_supply
+        supply.append(diff)
+        cost.append([0] * len(demand))
+
+    return supply, demand, cost
 def transportation_to_lp(supply, demand, cost):
+    # сначала балансируем
+    supply, demand, cost = balance_transportation(supply, demand, cost)
+
     m, n = len(supply), len(demand)
     c = [cost[i][j] for i in range(m) for j in range(n)]
     A, b, senses = [], [], []
 
     # ограничения по строкам (сумма по j = supply[i])
     for i in range(m):
-        row = [0]*(m*n)
+        row = [0] * (m * n)
         for j in range(n):
-            row[i*n + j] = 1
+            row[i * n + j] = 1
         A.append(row)
         b.append(supply[i])
         senses.append("==")
 
     # ограничения по столбцам (сумма по i = demand[j])
     for j in range(n):
-        row = [0]*(m*n)
+        row = [0] * (m * n)
         for i in range(m):
-            row[i*n + j] = 1
+            row[i * n + j] = 1
         A.append(row)
         b.append(demand[j])
         senses.append("==")
 
-    return c, A, b, senses
+    return c, A, b, senses, supply, demand, cost
 
 if __name__ == "__main__":
     from dual import dual_simplex
