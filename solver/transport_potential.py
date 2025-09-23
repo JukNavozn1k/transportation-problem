@@ -1,47 +1,78 @@
 def vogel_initial_solution(supply, demand, cost):
-    supply = supply[:]
-    demand = demand[:]
-    m, n = len(supply), len(demand)
-    alloc = [[0]*n for _ in range(m)]
+    """
+    Классический метод Фогеля. Возвращает только итоговый план.
+    Для поэтапного вывода используйте vogel_initial_solution_with_steps.
+    """
+    _, steps = vogel_initial_solution_with_steps(supply, demand, cost)
+    return steps[-1]["alloc"] if steps else [[0]*len(demand) for _ in range(len(supply))]
 
-    while any(s > 0 for s in supply) and any(d > 0 for d in demand):
+
+def vogel_initial_solution_with_steps(supply, demand, cost):
+    """Метод Фогеля с поэтапным журналом действий.
+
+    Возвращает кортеж (final_alloc, steps), где steps — список шагов.
+    Каждый шаг — dict:
+      - row_penalties: [(penalty, i)]
+      - col_penalties: [(penalty, j)]
+      - chosen: {"type": "row"|"col", "index": i|j, "cell": (i,j), "qty": q, "penalty": p}
+      - supply: текущий вектор запасов после шага
+      - demand: текущий вектор потребностей после шага
+      - alloc: текущая матрица распределений после шага
+    """
+    supply_work = supply[:]
+    demand_work = demand[:]
+    m, n = len(supply_work), len(demand_work)
+    alloc = [[0] * n for _ in range(m)]
+    steps = []
+
+    while any(s > 0 for s in supply_work) and any(d > 0 for d in demand_work):
         # штрафы
         row_penalties = []
         for i in range(m):
-            if supply[i] > 0:
-                row = [cost[i][j] for j in range(n) if demand[j] > 0]
-                if len(row) >= 2:
-                    sorted_row = sorted(row)
-                    row_penalties.append((sorted_row[1] - sorted_row[0], 'row', i))
-                elif len(row) == 1:
-                    row_penalties.append((row[0], 'row', i))
+            if supply_work[i] > 0:
+                row_costs = [cost[i][j] for j in range(n) if demand_work[j] > 0]
+                if len(row_costs) >= 2:
+                    sr = sorted(row_costs)
+                    row_penalties.append((sr[1] - sr[0], i))
+                elif len(row_costs) == 1:
+                    row_penalties.append((row_costs[0], i))
 
         col_penalties = []
         for j in range(n):
-            if demand[j] > 0:
-                col = [cost[i][j] for i in range(m) if supply[i] > 0]
-                if len(col) >= 2:
-                    sorted_col = sorted(col)
-                    col_penalties.append((sorted_col[1] - sorted_col[0], 'col', j))
-                elif len(col) == 1:
-                    col_penalties.append((col[0], 'col', j))
+            if demand_work[j] > 0:
+                col_costs = [cost[i][j] for i in range(m) if supply_work[i] > 0]
+                if len(col_costs) >= 2:
+                    sc = sorted(col_costs)
+                    col_penalties.append((sc[1] - sc[0], j))
+                elif len(col_costs) == 1:
+                    col_penalties.append((col_costs[0], j))
 
-        candidates = row_penalties + col_penalties
-        penalty, typ, idx = max(candidates, key=lambda x: x[0])
+        # выбор максимального штрафа
+        candidates = [(*p, 'row') for p in row_penalties] + [(*p, 'col') for p in col_penalties]
+        penalty, idx, typ = max(candidates, key=lambda x: x[0])
 
         if typ == 'row':
-            j = min((j for j in range(n) if demand[j] > 0), key=lambda jj: cost[idx][jj])
+            j = min((jj for jj in range(n) if demand_work[jj] > 0), key=lambda jj: cost[idx][jj])
             i = idx
         else:
-            i = min((i for i in range(m) if supply[i] > 0), key=lambda ii: cost[ii][idx])
+            i = min((ii for ii in range(m) if supply_work[ii] > 0), key=lambda ii: cost[ii][idx])
             j = idx
 
-        qty = min(supply[i], demand[j])
-        alloc[i][j] = qty
-        supply[i] -= qty
-        demand[j] -= qty
+        qty = min(supply_work[i], demand_work[j])
+        alloc[i][j] += qty
+        supply_work[i] -= qty
+        demand_work[j] -= qty
 
-    return alloc
+        steps.append({
+            "row_penalties": row_penalties[:],
+            "col_penalties": col_penalties[:],
+            "chosen": {"type": typ, "index": idx, "cell": (i, j), "qty": qty, "penalty": penalty},
+            "supply": supply_work[:],
+            "demand": demand_work[:],
+            "alloc": [row[:] for row in alloc],
+        })
+
+    return alloc, steps
 
 
 def balance_transportation(supply, demand, cost):
@@ -152,28 +183,83 @@ def find_entering_cell(alloc, cost, u, v):
 
 
 def improve_plan(alloc, cost):
-    alloc = make_non_degenerate(alloc, cost)
+    """Оптимизация методом потенциалов. Возвращает итоговый план."""
+    final_alloc, _ = improve_plan_with_steps(alloc, cost)
+    return final_alloc
+
+
+def improve_plan_with_steps(alloc, cost):
+    """Метод потенциалов с поэтапным журналом.
+
+    Возвращает (final_alloc, steps), где каждый шаг — dict:
+      - u: список потенциалов по строкам
+      - v: список потенциалов по столбцам
+      - deltas: матрица оценок delta_ij = c_ij - (u_i+v_j)
+      - entering: {"cell": (i,j), "delta": delta_min} или None, если оптимум
+      - cycle: список клеток цикла в порядке обхода
+      - plus: список клеток со знаком '+'
+      - minus: список клеток со знаком '-'
+      - theta: величина перераспределения
+      - alloc: матрица после применения шага
+    """
+    m, n = len(alloc), len(alloc[0])
+    work = [row[:] for row in alloc]
+    steps = []
+
+    work = make_non_degenerate(work, cost)
 
     while True:
-        u, v = calculate_potentials(alloc, cost)
-        cell, delta = find_entering_cell(alloc, cost, u, v)
-        if cell is None:
-            break  # оптимум
+        u, v = calculate_potentials(work, cost)
+        # матрица оценок
+        deltas = [[cost[i][j] - (u[i] + v[j]) for j in range(n)] for i in range(m)]
+        cell, delta = find_entering_cell(work, cost, u, v)
 
-        cycle = build_cycle(alloc, cell)
+        if cell is None:
+            steps.append({
+                "u": u[:],
+                "v": v[:],
+                "deltas": [row[:] for row in deltas],
+                "entering": None,
+                "alloc": [row[:] for row in work],
+            })
+            break
+
+        cycle = build_cycle(work, cell)
         if cycle is None:
-            break  # на всякий случай защита
+            # защита: нет цикла — выходим
+            steps.append({
+                "u": u[:],
+                "v": v[:],
+                "deltas": [row[:] for row in deltas],
+                "entering": {"cell": cell, "delta": delta},
+                "cycle": None,
+                "alloc": [row[:] for row in work],
+            })
+            break
 
         plus = cycle[::2]
         minus = cycle[1::2]
+        theta = min(work[i][j] for i, j in minus)
 
-        theta = min(alloc[i][j] for i, j in minus)
+        # применяем сдвиг
         for i, j in plus:
-            alloc[i][j] += theta
+            work[i][j] += theta
         for i, j in minus:
-            alloc[i][j] -= theta
+            work[i][j] -= theta
 
-    return alloc
+        steps.append({
+            "u": u[:],
+            "v": v[:],
+            "deltas": [row[:] for row in deltas],
+            "entering": {"cell": cell, "delta": delta},
+            "cycle": cycle[:],
+            "plus": plus[:],
+            "minus": minus[:],
+            "theta": theta,
+            "alloc": [row[:] for row in work],
+        })
+
+    return work, steps
 
 
 def transportation_problem(supply, demand, cost):
