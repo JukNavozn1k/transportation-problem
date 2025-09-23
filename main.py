@@ -179,8 +179,10 @@ def main():
             else:
                 cost_eff = [row[:] for row in cost]
 
-            # Балансировка
+            # Балансировка (рабочая для оптимизации)
             supply_b, demand_b, cost_b = balance_transportation(supply, demand, cost_eff)
+            # Балансировка (для показа исходной стоимости в разложении цели)
+            supply_disp, demand_disp, cost_disp = balance_transportation(supply, demand, cost)
             m_b, n_b = len(supply_b), len(demand_b)
 
             # 1) Фогель — шаги
@@ -299,11 +301,34 @@ def main():
             ]
             st.dataframe(pd.DataFrame(format_matrix(final_alloc), columns=cols_b, index=idx_b), use_container_width=True)
 
-            value = sum(final_alloc[i][j] * cost_b[i][j] for i in range(m_b) for j in range(n_b))
+            value_eff = sum(final_alloc[i][j] * cost_b[i][j] for i in range(m_b) for j in range(n_b))
             if objective == "Максимум":
-                st.metric("Z*", to_int_if_possible(-value))
+                st.metric("Z*", to_int_if_possible(-value_eff))
             else:
-                st.metric("Z*", to_int_if_possible(value))
+                st.metric("Z*", to_int_if_possible(value_eff))
+
+            # Разложение цели: Z = sum c_ij * x_ij на ИСХОДНОЙ матрице стоимостей (без знака)
+            try:
+                terms_symbolic = []
+                terms_numeric = []
+                for i in range(m_b):
+                    for j in range(n_b):
+                        xij = final_alloc[i][j]
+                        if abs(xij) > 1e-12:
+                            cij = cost_disp[i][j]
+                            cij_disp = to_int_if_possible(cij)
+                            xij_disp = to_int_if_possible(xij)
+                            terms_symbolic.append(fr"{cij_disp}\,x_{{S{i+1},D{j+1}}}")
+                            terms_numeric.append(fr"{cij_disp}\cdot {xij_disp}")
+                if terms_symbolic:
+                    st.markdown("Разложение цели Z в виде суммы произведений стоимости и объёма поставки:")
+                    st.latex("Z = " + " + ".join(terms_symbolic))
+                    total_original = sum(final_alloc[i][j] * cost_disp[i][j] for i in range(m_b) for j in range(n_b))
+                    st.latex("Z = " + " + ".join(terms_numeric) + f" = {to_int_if_possible(total_original)}")
+                    if objective == "Максимум":
+                        st.caption("Так как задача максимизации была сведена к минимизации по -C, здесь Z вычислен по исходным C.")
+            except Exception:
+                pass
 
         except Exception as e:
             st.error(f"Ошибка метода потенциалов: {e}")
