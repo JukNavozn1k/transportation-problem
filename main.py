@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from typing import List
 
-from solver.transport import vogel_initial_solution, transportation_to_lp, balance_transportation
+from solver.transport_simplex import vogel_initial_solution, transportation_to_lp, balance_transportation
 from solver.dual import dual_simplex
 
 
