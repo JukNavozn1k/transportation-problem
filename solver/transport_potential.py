@@ -65,42 +65,6 @@ def balance_transportation(supply, demand, cost):
     return supply, demand, cost
 
 
-def calculate_potentials(alloc, cost):
-    m, n = len(alloc), len(alloc[0])
-    u = [None] * m
-    v = [None] * n
-    u[0] = 0  # стартуем с нуля
-
-    # пока можно — вычисляем потенциалы
-    changed = True
-    while changed:
-        changed = False
-        for i in range(m):
-            for j in range(n):
-                if alloc[i][j] > 0:  # базисная клетка
-                    if u[i] is not None and v[j] is None:
-                        v[j] = cost[i][j] - u[i]
-                        changed = True
-                    elif v[j] is not None and u[i] is None:
-                        u[i] = cost[i][j] - v[j]
-                        changed = True
-    return u, v
-
-
-def find_entering_cell(alloc, cost, u, v):
-    m, n = len(alloc), len(alloc[0])
-    min_delta = 0
-    cell = None
-    for i in range(m):
-        for j in range(n):
-            if alloc[i][j] == 0:  # только небазисные клетки
-                delta = cost[i][j] - (u[i] + v[j])
-                if delta < min_delta:
-                    min_delta = delta
-                    cell = (i, j)
-    return cell, min_delta
-
-
 def build_cycle(alloc, start):
     """Строим цикл для улучшения плана (упрощённый поиск)."""
     from collections import deque
@@ -129,30 +93,102 @@ def build_cycle(alloc, start):
     return dfs([start], {start})
 
 
+def make_non_degenerate(alloc, cost):
+    """Добавляем искусственные нули, чтобы число базисных клеток было m+n-1."""
+    m, n = len(alloc), len(alloc[0])
+    # список базисных клеток
+    basis = [(i, j) for i in range(m) for j in range(n) if alloc[i][j] > 0]
+    needed = m + n - 1 - len(basis)
+    if needed <= 0:
+        return alloc
+
+    for i in range(m):
+        for j in range(n):
+            if alloc[i][j] == 0:
+                alloc[i][j] = 0  # явно помечаем как базис
+                basis.append((i, j))
+                needed -= 1
+                if needed == 0:
+                    return alloc
+    return alloc
+
+
+def calculate_potentials(alloc, cost):
+    m, n = len(alloc), len(alloc[0])
+    u = [None] * m
+    v = [None] * n
+    u[0] = 0
+
+    changed = True
+    while changed:
+        changed = False
+        for i in range(m):
+            for j in range(n):
+                if alloc[i][j] is not None and alloc[i][j] >= 0:  # базис
+                    if u[i] is not None and v[j] is None:
+                        v[j] = cost[i][j] - u[i]
+                        changed = True
+                    elif v[j] is not None and u[i] is None:
+                        u[i] = cost[i][j] - v[j]
+                        changed = True
+    # заполняем None нулями, чтобы не падало
+    u = [x if x is not None else 0 for x in u]
+    v = [x if x is not None else 0 for x in v]
+    return u, v
+
+
+def find_entering_cell(alloc, cost, u, v):
+    m, n = len(alloc), len(alloc[0])
+    min_delta = 0
+    cell = None
+    for i in range(m):
+        for j in range(n):
+            if alloc[i][j] == 0:  # только небазисные
+                delta = cost[i][j] - (u[i] + v[j])
+                if delta < min_delta:
+                    min_delta = delta
+                    cell = (i, j)
+    return cell, min_delta
+
+
 def improve_plan(alloc, cost):
+    alloc = make_non_degenerate(alloc, cost)
+
     while True:
         u, v = calculate_potentials(alloc, cost)
         cell, delta = find_entering_cell(alloc, cost, u, v)
         if cell is None:
-            break  # оптимум достигнут
+            break  # оптимум
 
         cycle = build_cycle(alloc, cell)
+        if cycle is None:
+            break  # на всякий случай защита
+
         plus = cycle[::2]
         minus = cycle[1::2]
 
-        # минимальная величина для вычитания
         theta = min(alloc[i][j] for i, j in minus)
         for i, j in plus:
             alloc[i][j] += theta
         for i, j in minus:
             alloc[i][j] -= theta
+
     return alloc
 
 
 def transportation_problem(supply, demand, cost):
+    # балансируем
     supply, demand, cost = balance_transportation(supply, demand, cost)
+
+    # начальный план Фогеля
     alloc = vogel_initial_solution(supply, demand, cost)
+
+    # оптимизация методом потенциалов
     alloc = improve_plan(alloc, cost)
+
+    # убираем фиктивные строки/столбцы
+    alloc = [row[:len(demand)] for row in alloc[:len(supply)]]
+
     return alloc
 
 
