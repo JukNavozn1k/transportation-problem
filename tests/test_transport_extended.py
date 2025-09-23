@@ -63,3 +63,33 @@ def test_potential_vs_simplex(supply, demand, cost):
     cost_pot = solve_with_potential(supply, demand, cost)
     cost_simplex = solve_with_simplex(supply, demand, cost)
     assert pytest.approx(cost_pot, rel=1e-6) == cost_simplex
+
+
+
+@pytest.mark.parametrize("supply, demand, cost", [
+    # 🔹 Большой перекос — всё забирает один потребитель
+    ([50, 30, 20], [100], 
+     [[2],
+      [3],
+      [1]]),
+
+    # 🔹 Большой перекос — один поставщик обслуживает всех
+    ([100], [40, 30, 30],
+     [[4, 5, 6]]),
+
+    # 🔹 Вырожденный случай: все стоимости разные, но базис неполный
+    ([10, 20], [15, 15],
+     [[1, 100],
+      [100, 1]]),
+
+    # 🔹 Более крупный случай 4x4
+    ([20, 30, 25, 15], [10, 20, 30, 30],
+     [[8, 6, 10, 9],
+      [9, 12, 13, 7],
+      [14, 9, 16, 5],
+      [10, 11, 8, 6]]),
+])
+def test_potential_vs_simplex_extra(supply, demand, cost):
+    cost_pot = solve_with_potential(supply, demand, cost)
+    cost_smp = solve_with_simplex(supply, demand, cost)
+    assert abs(cost_pot - cost_smp) < 1e-6
