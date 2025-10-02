@@ -53,11 +53,11 @@ def test_balance(example_data):
     assert sum(d1) == sum(d2)
 
 
-def test_vogel_initial_solution(example_data):
+def test_initial_solution(example_data):
     """Начальный план должен полностью удовлетворять спрос/предложение"""
     supply, demand, cost = example_data
     s, d, c = transport_potential.balance_transportation(supply, demand, cost)
-    alloc = transport_potential.vogel_initial_solution(s, d, c)
+    alloc = transport_potential.north_west_corner_solution(s, d)
 
     assert all(sum(row) == s[i] or s[i] == 0 for i, row in enumerate(alloc))
     assert all(sum(alloc[i][j] for i in range(len(s))) == d[j] or d[j] == 0 for j in range(len(d)))

@@ -1,48 +1,32 @@
-def vogel_initial_solution(supply, demand, cost):
+# transport_potential_fixed.py
+from copy import deepcopy
+
+def north_west_corner_solution(supply, demand):
     supply = supply[:]
     demand = demand[:]
     m, n = len(supply), len(demand)
-    alloc = [[0]*n for _ in range(m)]
+    alloc = [[0.0]*n for _ in range(m)]
 
-    while any(s > 0 for s in supply) and any(d > 0 for d in demand):
-        # штрафы
-        row_penalties = []
-        for i in range(m):
-            if supply[i] > 0:
-                row = [cost[i][j] for j in range(n) if demand[j] > 0]
-                if len(row) >= 2:
-                    sorted_row = sorted(row)
-                    row_penalties.append((sorted_row[1] - sorted_row[0], 'row', i))
-                elif len(row) == 1:
-                    row_penalties.append((row[0], 'row', i))
-
-        col_penalties = []
-        for j in range(n):
-            if demand[j] > 0:
-                col = [cost[i][j] for i in range(m) if supply[i] > 0]
-                if len(col) >= 2:
-                    sorted_col = sorted(col)
-                    col_penalties.append((sorted_col[1] - sorted_col[0], 'col', j))
-                elif len(col) == 1:
-                    col_penalties.append((col[0], 'col', j))
-
-        candidates = row_penalties + col_penalties
-        penalty, typ, idx = max(candidates, key=lambda x: x[0])
-
-        if typ == 'row':
-            j = min((j for j in range(n) if demand[j] > 0), key=lambda jj: cost[idx][jj])
-            i = idx
-        else:
-            i = min((i for i in range(m) if supply[i] > 0), key=lambda ii: cost[ii][idx])
-            j = idx
-
+    i, j = 0, 0
+    while i < m and j < n:
         qty = min(supply[i], demand[j])
-        alloc[i][j] = qty
+        alloc[i][j] = float(qty)
         supply[i] -= qty
         demand[j] -= qty
 
-    return alloc
+        if supply[i] == 0 and demand[j] == 0:
+            if i + 1 < m:
+                i += 1
+            elif j + 1 < n:
+                j += 1
+            else:
+                break
+        elif supply[i] == 0:
+            i += 1
+        elif demand[j] == 0:
+            j += 1
 
+    return alloc
 
 def balance_transportation(supply, demand, cost):
     total_supply = sum(supply)
@@ -64,56 +48,26 @@ def balance_transportation(supply, demand, cost):
 
     return supply, demand, cost
 
-
-def build_cycle(alloc, start):
-    """Строим цикл для улучшения плана (упрощённый поиск)."""
-    from collections import deque
+def make_non_degenerate_and_basis(alloc):
     m, n = len(alloc), len(alloc[0])
-    i0, j0 = start
-
-    # поиск цикла: чередуем строки и столбцы
-    def dfs(path, used):
-        i, j = path[-1]
-        if len(path) > 3 and (i, j) == (i0, j0):
-            return path
-        if len(path) % 2 == 1:  # по строке
-            for jj in range(n):
-                if (i, jj) not in used and (alloc[i][jj] > 0 or (i, jj) == (i0, j0)):
-                    res = dfs(path + [(i, jj)], used | {(i, jj)})
-                    if res:
-                        return res
-        else:  # по столбцу
-            for ii in range(m):
-                if (ii, j) not in used and (alloc[ii][j] > 0 or (ii, j) == (i0, j0)):
-                    res = dfs(path + [(ii, j)], used | {(ii, j)})
-                    if res:
-                        return res
-        return None
-
-    return dfs([start], {start})
-
-
-def make_non_degenerate(alloc, cost):
-    """Добавляем искусственные нули, чтобы число базисных клеток было m+n-1."""
-    m, n = len(alloc), len(alloc[0])
-    # список базисных клеток
-    basis = [(i, j) for i in range(m) for j in range(n) if alloc[i][j] > 0]
+    basis = {(i, j) for i in range(m) for j in range(n) if alloc[i][j] > 0}
     needed = m + n - 1 - len(basis)
+    epsilon = 1e-9
+
     if needed <= 0:
-        return alloc
+        return basis
 
     for i in range(m):
         for j in range(n):
-            if alloc[i][j] == 0:
-                alloc[i][j] = 0  # явно помечаем как базис
-                basis.append((i, j))
+            if (i, j) not in basis:
+                alloc[i][j] = epsilon
+                basis.add((i, j))
                 needed -= 1
                 if needed == 0:
-                    return alloc
-    return alloc
+                    return basis
+    return basis
 
-
-def calculate_potentials(alloc, cost):
+def calculate_potentials(alloc, cost, basis):
     m, n = len(alloc), len(alloc[0])
     u = [None] * m
     v = [None] * n
@@ -122,75 +76,127 @@ def calculate_potentials(alloc, cost):
     changed = True
     while changed:
         changed = False
-        for i in range(m):
-            for j in range(n):
-                if alloc[i][j] is not None and alloc[i][j] >= 0:  # базис
-                    if u[i] is not None and v[j] is None:
-                        v[j] = cost[i][j] - u[i]
-                        changed = True
-                    elif v[j] is not None and u[i] is None:
-                        u[i] = cost[i][j] - v[j]
-                        changed = True
-    # заполняем None нулями, чтобы не падало
+        for (i, j) in basis:
+            if u[i] is not None and v[j] is None:
+                v[j] = cost[i][j] - u[i]
+                changed = True
+            elif v[j] is not None and u[i] is None:
+                u[i] = cost[i][j] - v[j]
+                changed = True
+
     u = [x if x is not None else 0 for x in u]
     v = [x if x is not None else 0 for x in v]
     return u, v
 
-
-def find_entering_cell(alloc, cost, u, v):
+def find_entering_cell(alloc, cost, u, v, basis):
     m, n = len(alloc), len(alloc[0])
     min_delta = 0
     cell = None
     for i in range(m):
         for j in range(n):
-            if alloc[i][j] == 0:  # только небазисные
+            if (i, j) not in basis:
                 delta = cost[i][j] - (u[i] + v[j])
                 if delta < min_delta:
                     min_delta = delta
                     cell = (i, j)
     return cell, min_delta
 
+def build_cycle(alloc, start, basis):
+    """Строим цикл для MODI: движение по строкам и столбцам."""
+    m, n = len(alloc), len(alloc[0])
+    allowed = set(basis)
+    allowed.add(start)
+    i0, j0 = start
+
+    def dfs(path, visited, horizontal):
+        i, j = path[-1]
+        if len(path) > 3 and (i, j) == (i0, j0):
+            return path
+        next_positions = []
+        if horizontal:
+            for jj in range(n):
+                pos = (i, jj)
+                if pos in allowed and (pos not in visited or pos == (i0, j0)):
+                    next_positions.append(pos)
+        else:
+            for ii in range(m):
+                pos = (ii, j)
+                if pos in allowed and (pos not in visited or pos == (i0, j0)):
+                    next_positions.append(pos)
+        for pos in next_positions:
+            if pos == path[-1]:
+                continue
+            new_path = path + [pos]
+            res = dfs(new_path, visited | {pos}, not horizontal)
+            if res:
+                return res
+        return None
+
+    return dfs([start], {start}, horizontal=True)
+
+def rebuild_basis_after_pivot(alloc):
+    m, n = len(alloc), len(alloc[0])
+    eps = 1e-12
+    basis = {(i, j) for i in range(m) for j in range(n) if alloc[i][j] > eps}
+    needed = m + n - 1 - len(basis)
+    epsilon = 1e-9
+
+    if needed > 0:
+        for i in range(m):
+            for j in range(n):
+                if (i, j) not in basis:
+                    alloc[i][j] = epsilon
+                    basis.add((i, j))
+                    needed -= 1
+                    if needed == 0:
+                        return basis
+    return basis
 
 def improve_plan(alloc, cost):
-    alloc = make_non_degenerate(alloc, cost)
+    alloc = [list(map(float, row)) for row in alloc]
+    m, n = len(alloc), len(alloc[0])
+    basis = {(i, j) for i in range(m) for j in range(n) if alloc[i][j] > 0}
+    if len(basis) < m + n - 1:
+        basis = make_non_degenerate_and_basis(alloc)
 
     while True:
-        u, v = calculate_potentials(alloc, cost)
-        cell, delta = find_entering_cell(alloc, cost, u, v)
+        u, v = calculate_potentials(alloc, cost, basis)
+        cell, delta = find_entering_cell(alloc, cost, u, v, basis)
         if cell is None:
-            break  # оптимум
+            break
 
-        cycle = build_cycle(alloc, cell)
+        cycle = build_cycle(alloc, cell, basis)
         if cycle is None:
-            break  # на всякий случай защита
+            break
+
+        if cycle[-1] == cycle[0]:
+            cycle = cycle[:-1]
 
         plus = cycle[::2]
         minus = cycle[1::2]
-
-        theta = min(alloc[i][j] for i, j in minus)
-        for i, j in plus:
+        theta = min(alloc[i][j] for (i, j) in minus)
+        for (i, j) in plus:
             alloc[i][j] += theta
-        for i, j in minus:
+        for (i, j) in minus:
             alloc[i][j] -= theta
+            if abs(alloc[i][j]) < 1e-12:
+                alloc[i][j] = 0.0
+
+        basis = rebuild_basis_after_pivot(alloc)
+
+    for i in range(m):
+        for j in range(n):
+            if abs(alloc[i][j]) < 1e-9:
+                alloc[i][j] = 0.0
 
     return alloc
-
 
 def transportation_problem(supply, demand, cost):
-    # балансируем
-    supply, demand, cost = balance_transportation(supply, demand, cost)
-
-    # начальный план Фогеля
-    alloc = vogel_initial_solution(supply, demand, cost)
-
-    # оптимизация методом потенциалов
-    alloc = improve_plan(alloc, cost)
-
-    # убираем фиктивные строки/столбцы
+    supply_b, demand_b, cost_b = balance_transportation(supply, demand, cost)
+    alloc = north_west_corner_solution(supply_b, demand_b)
+    alloc = improve_plan(alloc, cost_b)
     alloc = [row[:len(demand)] for row in alloc[:len(supply)]]
-
     return alloc
-
 
 if __name__ == "__main__":
     supply = [20, 30, 25]
@@ -202,7 +208,6 @@ if __name__ == "__main__":
     ]
 
     result = transportation_problem(supply, demand, cost)
-
     print("Оптимальный план (метод потенциалов):")
     for row in result:
         print(row)
