@@ -152,6 +152,124 @@ def rebuild_basis_after_pivot(alloc):
                         return basis
     return basis
 
+def _format_matrix(M):
+    return [[float(x) for x in row] for row in M]
+
+def compute_reduced_costs(cost, u, v):
+    m, n = len(cost), len(cost[0])
+    deltas = [[0.0] * n for _ in range(m)]
+    for i in range(m):
+        for j in range(n):
+            deltas[i][j] = cost[i][j] - (u[i] + v[j])
+    return deltas
+
+def north_west_corner_with_steps(supply, demand):
+    s = supply[:]
+    d = demand[:]
+    m, n = len(s), len(d)
+    alloc = [[0.0] * n for _ in range(m)]
+    log = []
+
+    i, j = 0, 0
+    step = 1
+    while i < m and j < n:
+        qty = min(s[i], d[j])
+        alloc[i][j] = float(qty)
+        log.append(
+            f"Шаг {step}: Клетка (i={i+1}, j={j+1}). Берём min(поставка[{i+1}]={s[i]}, спрос[{j+1}]={d[j]}) = {qty}.\n"
+            f"  - Заполняем x[{i+1}][{j+1}] = {qty}.\n"
+            f"  - Обновляем: поставка[{i+1}] -= {qty} → {s[i]-qty}, спрос[{j+1}] -= {qty} → {d[j]-qty}."
+        )
+        s[i] -= qty
+        d[j] -= qty
+
+        if s[i] == 0 and d[j] == 0:
+            if i + 1 < m:
+                i += 1
+                log.append("  Оба исчерпаны: переходим вниз к следующей строке.")
+            elif j + 1 < n:
+                j += 1
+                log.append("  Оба исчерпаны: переходим вправо к следующему столбцу.")
+            else:
+                break
+        elif s[i] == 0:
+            i += 1
+            log.append("  Поставка исчерпана: переходим вниз (следующая строка).")
+        elif d[j] == 0:
+            j += 1
+            log.append("  Спрос исчерпан: переходим вправо (следующий столбец).")
+        step += 1
+
+    return alloc, log
+
+def improve_plan_with_steps(alloc, cost):
+    A = [list(map(float, row)) for row in alloc]
+    m, n = len(A), len(A[0])
+    eps = 1e-12
+    basis = {(i, j) for i in range(m) for j in range(n) if A[i][j] > eps}
+    if len(basis) < m + n - 1:
+        basis = make_non_degenerate_and_basis(A)
+    steps = []
+
+    iter_no = 1
+    while True:
+        u, v = calculate_potentials(A, cost, basis)
+        deltas = compute_reduced_costs(cost, u, v)
+
+        entering, min_delta = find_entering_cell(A, cost, u, v, basis)
+        step_log = {
+            "iteration": iter_no,
+            "u": u[:],
+            "v": v[:],
+            "reduced_costs": _format_matrix(deltas),
+            "entering": entering,
+            "min_delta": float(min_delta) if entering is not None else None,
+            "cycle": None,
+            "theta": None,
+            "alloc_before": _format_matrix(A),
+            "alloc_after": None,
+        }
+
+        if entering is None:
+            step_log["note"] = "Все приведённые стоимости >= 0. План оптимален."
+            steps.append(step_log)
+            break
+
+        cycle = build_cycle(A, entering, basis)
+        step_log["cycle"] = cycle
+        if cycle is None:
+            step_log["note"] = "Не удалось построить цикл. Останавливаемся."
+            steps.append(step_log)
+            break
+
+        if cycle[-1] == cycle[0]:
+            cycle = cycle[:-1]
+
+        plus = cycle[::2]
+        minus = cycle[1::2]
+        theta = min(A[i][j] for (i, j) in minus)
+        step_log["theta"] = float(theta)
+
+        for (i, j) in plus:
+            A[i][j] += theta
+        for (i, j) in minus:
+            A[i][j] -= theta
+            if abs(A[i][j]) < eps:
+                A[i][j] = 0.0
+
+        basis = rebuild_basis_after_pivot(A)
+        step_log["alloc_after"] = _format_matrix(A)
+        steps.append(step_log)
+
+        iter_no += 1
+
+    for i in range(m):
+        for j in range(n):
+            if abs(A[i][j]) < 1e-9:
+                A[i][j] = 0.0
+
+    return A, steps
+
 def improve_plan(alloc, cost):
     alloc = [list(map(float, row)) for row in alloc]
     m, n = len(alloc), len(alloc[0])
@@ -199,12 +317,12 @@ def transportation_problem(supply, demand, cost):
     return alloc
 
 if __name__ == "__main__":
-    supply = [20, 30, 25]
-    demand = [10, 10, 35, 20]
+    supply = [15,25 , 10]
+    demand = [2, 20 , 18]
     cost = [
-        [8, 6, 10, 9],
-        [9, 12, 13, 7],
-        [14, 9, 16, 5],
+        [2,5,7],
+        [8,12,2],
+        [1,3,8],
     ]
 
     result = transportation_problem(supply, demand, cost)

@@ -199,12 +199,12 @@ def transportation_problem(supply, demand, cost):
     return alloc
 
 if __name__ == "__main__":
-    supply = [20, 30, 25]
-    demand = [10, 10, 35, 20]
+    supply = [15,25 , 10]
+    demand = [2, 20 , 18]
     cost = [
-        [8, 6, 10, 9],
-        [9, 12, 13, 7],
-        [14, 9, 16, 5],
+        [2,5,7],
+        [8,12,2],
+        [1,3,8],
     ]
 
     result = transportation_problem(supply, demand, cost)
